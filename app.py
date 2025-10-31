@@ -213,7 +213,9 @@ def main():
     
     # 検索実行
     if submitted:
-        if not title.strip():
+        # タイトル必須チェック
+        t = title;
+        if not t.strip():
             st.error("❌ タイトルを入力してください")
             return
         
