@@ -55,7 +55,7 @@ def search_books_with_volume(title, volume_number, retries=3, max_pages=5):
     """
     タイトルで検索し、指定した巻数が含まれる書籍を抽出する
     最大5ページまで検索結果を取得
-    APIパラメータで1円～2000円の価格帯に制限
+    APIパラメータ + クライアント側で1円～2000円の価格帯に制限（二重チェック）
     """
     all_results = []
     
@@ -116,9 +116,16 @@ def search_books_with_volume(title, volume_number, retries=3, max_pages=5):
                 if volume_number and volume_number not in book_title:
                     continue
                 
-                # 価格はAPIパラメータで制御済み（1円～2000円）
+                # 価格フィルタリング（APIパラメータ + クライアント側での二重チェック）
                 item_price = book.get('itemPrice', 0)
-                price_value = int(item_price) if item_price else 0
+                try:
+                    price_value = int(item_price) if item_price else 0
+                    # 2000円を超える場合はスキップ
+                    if price_value > 2000:
+                        continue
+                except (ValueError, TypeError):
+                    # 価格が不明な場合はスキップ
+                    continue
                 
                 # 条件を満たす書籍を結果に追加
                 book_data = {
@@ -227,7 +234,8 @@ def main():
         st.write("**価格フィルタリング:**")
         st.write("- 最低価格: 1円")
         st.write("- 最高価格: 2000円")
-        st.write("- フィルタリング方法: APIパラメータ (minPrice/maxPrice)")
+        st.write("- フィルタリング方法: APIパラメータ + クライアント側二重チェック")
+        st.write("- 目的: 単行本のみ取得（豪華版・全集除外）")
 
 if __name__ == "__main__":
     main()
