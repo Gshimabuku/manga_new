@@ -403,7 +403,7 @@ def main():
             
             sheet_search_title = st.text_input(
                 "検索用タイトル *（必須）",
-                value="" if clear_fields else st.session_state.get('current_title', ''),
+                value="" if clear_fields else selected_book['タイトル'],
                 help="検索に使用したタイトル（必須）",
                 key="sheet_search_title_input"
             )
