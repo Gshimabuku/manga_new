@@ -193,7 +193,7 @@ def main():
         col1, col2 = st.columns(2)
         
         with col1:
-            min_price_options = ["指定なし"] + [f"{i}円" for i in range(0, 1100, 100)]
+            min_price_options = ["指定なし"] + [f"{i}円" for i in range(100, 1100, 100)]
             min_price = st.selectbox(
                 "最低価格",
                 options=min_price_options,
