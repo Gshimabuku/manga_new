@@ -55,6 +55,7 @@ def search_books_with_volume(title, volume_number, retries=3, max_pages=5):
     """
     タイトルで検索し、指定した巻数が含まれる書籍を抽出する
     最大5ページまで検索結果を取得
+    APIパラメータで1円～2000円の価格帯に制限
     """
     all_results = []
     
@@ -69,7 +70,9 @@ def search_books_with_volume(title, volume_number, retries=3, max_pages=5):
             'title': api_title,
             'sort': '-releaseDate',
             'hits': 30,
-            'page': page
+            'page': page,
+            'minPrice': 1,      # 最低価格1円
+            'maxPrice': 2000    # 最高価格2000円
         }
         
         page_results = []
@@ -113,12 +116,16 @@ def search_books_with_volume(title, volume_number, retries=3, max_pages=5):
                 if volume_number and volume_number not in book_title:
                     continue
                 
+                # 価格はAPIパラメータで制御済み（1円～2000円）
+                item_price = book.get('itemPrice', 0)
+                price_value = int(item_price) if item_price else 0
+                
                 # 条件を満たす書籍を結果に追加
                 book_data = {
                     "タイトル": book_title,
                     "ISBN": book["isbn"],
                     "出版日": book["salesDate"],
-                    "価格": f"{book.get('itemPrice', '不明')}円",
+                    "価格": f"{price_value}円",
                     "出版社": book.get("publisherName", "不明")
                 }
                 
@@ -195,9 +202,9 @@ def main():
             
             # 検索結果の要約
             if volume_number.strip():
-                st.info(f"「{title}」の{volume_number}巻に関連する書籍を表示しています（最大5ページまで検索）")
+                st.info(f"「{title}」の{volume_number}巻に関連する書籍を表示しています（2000円以下、最大5ページまで検索）")
             else:
-                st.info(f"「{title}」に関連する全ての書籍を表示しています（最大5ページまで検索）")
+                st.info(f"「{title}」に関連する全ての書籍を表示しています（2000円以下、最大5ページまで検索）")
         else:
             st.warning("⚠️ 検索条件に一致する書籍は見つかりませんでした")
             
@@ -207,6 +214,7 @@ def main():
             - タイトルは部分一致で検索され、スペース区切りの単語すべてが含まれる書籍を抽出します
             - 巻数は「108」のように数字のみ入力してください
             - 巻数を指定しない場合、そのタイトルの全ての書籍が表示されます
+            - 価格は2000円以下の単行本のみ表示されます（高額な豪華版や全集は除外）
             - 例：「ONE PIECE」と入力すると、「ONE」と「PIECE」両方を含む書籍のみが表示されます
             """)
 
@@ -216,6 +224,10 @@ def main():
         st.write(f"- 楽天API Key: {'✅ 設定済み' if API_KEY else '❌ 未設定'}")
         st.write(f"- 楽天Affiliate ID: {'✅ 設定済み' if AFFILIATE_ID else '❌ 未設定'}")
         st.write(f"- API Endpoint: {API_ENDPOINT}")
+        st.write("**価格フィルタリング:**")
+        st.write("- 最低価格: 1円")
+        st.write("- 最高価格: 2000円")
+        st.write("- フィルタリング方法: APIパラメータ (minPrice/maxPrice)")
 
 if __name__ == "__main__":
     main()
