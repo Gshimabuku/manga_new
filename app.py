@@ -303,6 +303,11 @@ def main():
             st.session_state.selected_book_index = 0
             st.session_state.last_search_results = len(results)
         
+        # 検索結果をセッション状態に保存
+        st.session_state.current_results = results
+        st.session_state.current_title = title.strip()
+        st.session_state.current_volume = volume_number.strip()
+        
         # 結果表示
         st.subheader("📊 検索結果")
         
@@ -335,18 +340,22 @@ def main():
             
             # レコード選択
             book_options = [f"{i+1}. {result['タイトル']}" for i, result in enumerate(results)]
+            
+            # 選択可能な範囲をチェック
+            if st.session_state.selected_book_index >= len(results):
+                st.session_state.selected_book_index = 0
+            
             selected_book_index = st.selectbox(
                 "追加する書籍を選択してください",
                 options=range(len(results)),
                 format_func=lambda x: book_options[x],
                 index=st.session_state.selected_book_index,
                 help="スプレッドシートに追加したい書籍を選択してください",
-                key="book_selector"
+                key=f"book_selector_{len(results)}_{hash(str(results))}"  # ユニークなキーを生成
             )
             
-            # 選択が変更されたらセッション状態を更新
-            if selected_book_index != st.session_state.selected_book_index:
-                st.session_state.selected_book_index = selected_book_index
+            # 選択が変更されたらセッション状態を更新（ページリロードを回避）
+            st.session_state.selected_book_index = selected_book_index
             
             # 選択された書籍の情報を表示
             selected_book = results[selected_book_index]
@@ -365,13 +374,13 @@ def main():
                 
                 sheet_search_title = st.text_input(
                     "検索用タイトル *（必須）",
-                    value=title.strip(),
+                    value=st.session_state.get('current_title', title.strip()),
                     help="検索に使用したタイトル（必須）"
                 )
                 
                 sheet_volume = st.text_input(
                     "巻数 *（必須）",
-                    value=volume_number.strip() if volume_number.strip() else "",
+                    value=st.session_state.get('current_volume', volume_number.strip() if volume_number.strip() else ""),
                     help="巻数（必須）"
                 )
                 
