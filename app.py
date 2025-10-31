@@ -358,26 +358,33 @@ def main():
             # 入力フィールド（フォーム外）
             st.subheader("📋 追加する情報")
             
+            # 成功フラグでフィールドをクリア
+            clear_fields = st.session_state.get('clear_input_fields', False)
+            
             sheet_title = st.text_input(
                 "タイトル *（必須）",
-                value=selected_book['タイトル'],
+                value="" if clear_fields else selected_book['タイトル'],
                 help="スプレッドシートに記録するタイトル（必須）",
                 key="sheet_title_input"
             )
             
             sheet_search_title = st.text_input(
                 "検索用タイトル *（必須）",
-                value=st.session_state.get('current_title', ''),
+                value="" if clear_fields else st.session_state.get('current_title', ''),
                 help="検索に使用したタイトル（必須）",
                 key="sheet_search_title_input"
             )
             
             sheet_volume = st.text_input(
                 "巻数 *（必須）",
-                value=st.session_state.get('current_volume', ''),
+                value="" if clear_fields else st.session_state.get('current_volume', ''),
                 help="巻数（必須）",
                 key="sheet_volume_input"
             )
+            
+            # クリアフラグをリセット
+            if clear_fields:
+                st.session_state.clear_input_fields = False
             
             # 追加ボタン
             if st.button("📝 スプレッドシートに追加", key="add_to_sheet_button"):
@@ -398,10 +405,8 @@ def main():
                     
                     if success:
                         st.success("✅ スプレッドシートに追加されました！")
-                        # 成功時は入力フィールドをクリア
-                        st.session_state.sheet_title_input = ""
-                        st.session_state.sheet_search_title_input = ""
-                        st.session_state.sheet_volume_input = ""
+                        # 成功時はフィールドクリアフラグを設定
+                        st.session_state.clear_input_fields = True
                         st.rerun()
                     else:
                         st.error("❌ スプレッドシートへの追加に失敗しました")
