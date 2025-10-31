@@ -386,6 +386,11 @@ def main():
             if clear_fields:
                 st.session_state.clear_input_fields = False
             
+            # 成功メッセージの表示
+            if st.session_state.get('show_success_message', False):
+                st.success("✅ スプレッドシートに追加されました！")
+                st.session_state.show_success_message = False
+            
             # 追加ボタン
             if st.button("📝 スプレッドシートに追加", key="add_to_sheet_button"):
                 # すべての項目が入力されているかチェック
@@ -404,9 +409,9 @@ def main():
                         )
                     
                     if success:
-                        st.success("✅ スプレッドシートに追加されました！")
-                        # 成功時はフィールドクリアフラグを設定
+                        # 成功時はフィールドクリアフラグと成功メッセージフラグを設定
                         st.session_state.clear_input_fields = True
+                        st.session_state.show_success_message = True
                         st.rerun()
                     else:
                         st.error("❌ スプレッドシートへの追加に失敗しました")
