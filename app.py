@@ -381,6 +381,9 @@ def main():
                 key="book_selector"
             )
             
+            # 選択が変更されたかどうかをチェック
+            book_selection_changed = (st.session_state.selected_book_index != selected_book_index)
+            
             # 選択が変更されたらセッション状態を更新
             st.session_state.selected_book_index = selected_book_index
             
@@ -391,28 +394,34 @@ def main():
             # 入力フィールド（フォーム外）
             st.subheader("📋 追加する情報")
             
-            # 成功フラグでフィールドをクリア
+            # 成功フラグでフィールドをクリア、または選択変更時にフィールドを更新
             clear_fields = st.session_state.get('clear_input_fields', False)
+            update_fields = book_selection_changed or clear_fields
+            
+            # デフォルト値を設定
+            default_title = "" if clear_fields else selected_book['タイトル']
+            default_search_title = "" if clear_fields else selected_book['タイトル']  
+            default_volume = "" if clear_fields else st.session_state.get('current_volume', '')
             
             sheet_title = st.text_input(
                 "タイトル *（必須）",
-                value="" if clear_fields else selected_book['タイトル'],
+                value=default_title,
                 help="スプレッドシートに記録するタイトル（必須）",
-                key="sheet_title_input"
+                key=f"sheet_title_input_{selected_book_index}" if update_fields else "sheet_title_input"
             )
             
             sheet_search_title = st.text_input(
                 "検索用タイトル *（必須）",
-                value="" if clear_fields else selected_book['タイトル'],
+                value=default_search_title,
                 help="検索に使用したタイトル（必須）",
-                key="sheet_search_title_input"
+                key=f"sheet_search_title_input_{selected_book_index}" if update_fields else "sheet_search_title_input"
             )
             
             sheet_volume = st.text_input(
                 "巻数 *（必須）",
-                value="" if clear_fields else st.session_state.get('current_volume', ''),
+                value=default_volume,
                 help="巻数（必須）",
-                key="sheet_volume_input"
+                key=f"sheet_volume_input_{selected_book_index}" if update_fields else "sheet_volume_input"
             )
             
             # クリアフラグをリセット
