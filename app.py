@@ -201,11 +201,11 @@ def main():
             )
         
         with col2:
-            max_price_options = ["指定なし"] + [f"{i}円" for i in range(700, 2100, 100)]
+            max_price_options = ["指定なし"] + [f"{i}円" for i in range(500, 2100, 100)]
             max_price = st.selectbox(
                 "最高価格",
                 options=max_price_options,
-                index=4,  # デフォルトで1000円を選択（700から2000までなので4番目）
+                index=6,  # デフォルトで1000円を選択（500から2000までなので6番目）
                 help="検索する書籍の最高価格を選択してください"
             )
         
