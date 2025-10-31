@@ -51,11 +51,11 @@ def title_matches(book_title, search_title):
     
     return True
 
-def search_books_with_volume(title, volume_number, retries=3, max_pages=5):
+def search_books_with_volume(title, volume_number, min_price=None, max_price=None, retries=3, max_pages=5):
     """
     タイトルで検索し、指定した巻数が含まれる書籍を抽出する
     最大5ページまで検索結果を取得
-    APIパラメータ + クライアント側で1円～2000円の価格帯に制限（二重チェック）
+    APIパラメータ + クライアント側で価格帯に制限（二重チェック）
     """
     all_results = []
     
@@ -70,10 +70,14 @@ def search_books_with_volume(title, volume_number, retries=3, max_pages=5):
             'title': api_title,
             'sort': '-releaseDate',
             'hits': 30,
-            'page': page,
-            'minPrice': 1,      # 最低価格1円
-            'maxPrice': 2000    # 最高価格2000円
+            'page': page
         }
+        
+        # 価格パラメータを動的に追加
+        if min_price is not None:
+            params['minPrice'] = min_price
+        if max_price is not None:
+            params['maxPrice'] = max_price
         
         page_results = []
         
@@ -120,9 +124,15 @@ def search_books_with_volume(title, volume_number, retries=3, max_pages=5):
                 item_price = book.get('itemPrice', 0)
                 try:
                     price_value = int(item_price) if item_price else 0
-                    # 2000円を超える場合はスキップ
-                    if price_value > 2000:
+                    
+                    # 最低価格チェック
+                    if min_price is not None and price_value < min_price:
                         continue
+                    
+                    # 最高価格チェック
+                    if max_price is not None and price_value > max_price:
+                        continue
+                        
                 except (ValueError, TypeError):
                     # 価格が不明な場合はスキップ
                     continue
@@ -179,6 +189,26 @@ def main():
             help="特定の巻数を検索したい場合に入力してください。空白の場合は全ての巻を表示します。"
         )
         
+        # 価格設定
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            min_price_options = ["指定なし"] + [f"{i}円" for i in range(0, 1100, 100)]
+            min_price = st.selectbox(
+                "最低価格",
+                options=min_price_options,
+                help="検索する書籍の最低価格を選択してください"
+            )
+        
+        with col2:
+            max_price_options = ["指定なし"] + [f"{i}円" for i in range(700, 2100, 100)]
+            max_price = st.selectbox(
+                "最高価格",
+                options=max_price_options,
+                index=4,  # デフォルトで1000円を選択（700から2000までなので4番目）
+                help="検索する書籍の最高価格を選択してください"
+            )
+        
         submitted = st.form_submit_button("🔍 検索開始")
     
     # 検索実行
@@ -186,6 +216,16 @@ def main():
         if not title.strip():
             st.error("❌ タイトルを入力してください")
             return
+        
+        # 価格パラメータの変換
+        min_price_value = None
+        max_price_value = None
+        
+        if min_price != "指定なし":
+            min_price_value = int(min_price.replace("円", ""))
+        
+        if max_price != "指定なし":
+            max_price_value = int(max_price.replace("円", ""))
         
         # 検索条件の表示
         st.subheader("🔎 検索条件")
@@ -195,9 +235,21 @@ def main():
         else:
             st.write("**巻数:** 指定なし（全巻表示）")
         
+        # 価格条件の表示
+        price_condition = []
+        if min_price_value is not None:
+            price_condition.append(f"{min_price_value}円以上")
+        if max_price_value is not None:
+            price_condition.append(f"{max_price_value}円以下")
+        
+        if price_condition:
+            st.write(f"**価格:** {' かつ '.join(price_condition)}")
+        else:
+            st.write("**価格:** 指定なし")
+        
         # 検索実行
         with st.spinner("検索中... (最大5ページまで検索します)"):
-            results = search_books_with_volume(title.strip(), volume_number.strip())
+            results = search_books_with_volume(title.strip(), volume_number.strip(), min_price_value, max_price_value)
         
         # 結果表示
         st.subheader("📊 検索結果")
@@ -208,10 +260,19 @@ def main():
             st.success(f"✅ {len(results)}件の書籍が見つかりました！")
             
             # 検索結果の要約
+            price_range = ""
+            if min_price_value is not None or max_price_value is not None:
+                price_parts = []
+                if min_price_value is not None:
+                    price_parts.append(f"{min_price_value}円以上")
+                if max_price_value is not None:
+                    price_parts.append(f"{max_price_value}円以下")
+                price_range = f"、{' かつ '.join(price_parts)}"
+            
             if volume_number.strip():
-                st.info(f"「{title}」の{volume_number}巻に関連する書籍を表示しています（2000円以下、最大5ページまで検索）")
+                st.info(f"「{title}」の{volume_number}巻に関連する書籍を表示しています（{price_range.lstrip('、') if price_range else '価格制限なし'}、最大5ページまで検索）")
             else:
-                st.info(f"「{title}」に関連する全ての書籍を表示しています（2000円以下、最大5ページまで検索）")
+                st.info(f"「{title}」に関連する全ての書籍を表示しています（{price_range.lstrip('、') if price_range else '価格制限なし'}、最大5ページまで検索）")
         else:
             st.warning("⚠️ 検索条件に一致する書籍は見つかりませんでした")
             
@@ -221,7 +282,8 @@ def main():
             - タイトルは部分一致で検索され、スペース区切りの単語すべてが含まれる書籍を抽出します
             - 巻数は「108」のように数字のみ入力してください
             - 巻数を指定しない場合、そのタイトルの全ての書籍が表示されます
-            - 価格は2000円以下の単行本のみ表示されます（高額な豪華版や全集は除外）
+            - 価格はプルダウンで指定した範囲内の書籍のみ表示されます
+            - 最低価格のみ、最高価格のみの指定も可能です
             - 例：「ONE PIECE」と入力すると、「ONE」と「PIECE」両方を含む書籍のみが表示されます
             """)
 
@@ -232,10 +294,9 @@ def main():
         st.write(f"- 楽天Affiliate ID: {'✅ 設定済み' if AFFILIATE_ID else '❌ 未設定'}")
         st.write(f"- API Endpoint: {API_ENDPOINT}")
         st.write("**価格フィルタリング:**")
-        st.write("- 最低価格: 1円")
-        st.write("- 最高価格: 2000円")
         st.write("- フィルタリング方法: APIパラメータ + クライアント側二重チェック")
-        st.write("- 目的: 単行本のみ取得（豪華版・全集除外）")
+        st.write("- 目的: ユーザー指定価格帯での検索")
+        st.write("- 価格設定: 動的（フォームで選択可能）")
 
 if __name__ == "__main__":
     main()
