@@ -298,6 +298,11 @@ def main():
         with st.spinner("検索中... (最大5ページまで検索します)"):
             results = search_books_with_volume(title.strip(), volume_number.strip(), min_price_value, max_price_value)
         
+        # 新しい検索結果の場合、選択状態をリセット
+        if 'last_search_results' not in st.session_state or st.session_state.last_search_results != len(results):
+            st.session_state.selected_book_index = 0
+            st.session_state.last_search_results = len(results)
+        
         # 結果表示
         st.subheader("📊 検索結果")
         
@@ -324,14 +329,24 @@ def main():
             # スプレッドシート追加セクション
             st.subheader("📝 スプレッドシートに追加")
             
+            # セッション状態の初期化
+            if 'selected_book_index' not in st.session_state:
+                st.session_state.selected_book_index = 0
+            
             # レコード選択
             book_options = [f"{i+1}. {result['タイトル']}" for i, result in enumerate(results)]
             selected_book_index = st.selectbox(
                 "追加する書籍を選択してください",
                 options=range(len(results)),
                 format_func=lambda x: book_options[x],
-                help="スプレッドシートに追加したい書籍を選択してください"
+                index=st.session_state.selected_book_index,
+                help="スプレッドシートに追加したい書籍を選択してください",
+                key="book_selector"
             )
+            
+            # 選択が変更されたらセッション状態を更新
+            if selected_book_index != st.session_state.selected_book_index:
+                st.session_state.selected_book_index = selected_book_index
             
             # 選択された書籍の情報を表示
             selected_book = results[selected_book_index]
@@ -341,7 +356,7 @@ def main():
             with st.form("add_to_sheet_form"):
                 st.subheader("📋 追加する情報")
                 
-                # 3つの項目を入力
+                # 3つの項目を入力（選択された書籍に基づいて初期値を設定）
                 sheet_title = st.text_input(
                     "タイトル *（必須）",
                     value=selected_book['タイトル'],
