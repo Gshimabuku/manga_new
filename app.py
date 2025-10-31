@@ -256,7 +256,7 @@ def main():
         
         submitted = st.form_submit_button("🔍 検索開始")
     
-    # 検索実行
+    # 検索実行またはセッション状態から検索結果を取得
     if submitted:
         # タイトル必須チェック
         t = title;
@@ -298,15 +298,16 @@ def main():
         with st.spinner("検索中... (最大5ページまで検索します)"):
             results = search_books_with_volume(title.strip(), volume_number.strip(), min_price_value, max_price_value)
         
-        # 新しい検索結果の場合、選択状態をリセット
-        if 'last_search_results' not in st.session_state or st.session_state.last_search_results != len(results):
-            st.session_state.selected_book_index = 0
-            st.session_state.last_search_results = len(results)
-        
         # 検索結果をセッション状態に保存
         st.session_state.current_results = results
         st.session_state.current_title = title.strip()
         st.session_state.current_volume = volume_number.strip()
+        st.session_state.has_search_results = True
+        st.session_state.selected_book_index = 0  # 新しい検索時はリセット
+    
+    # セッション状態から検索結果を表示
+    if st.session_state.get('has_search_results', False) and 'current_results' in st.session_state:
+        results = st.session_state.current_results
         
         # 結果表示
         st.subheader("📊 検索結果")
@@ -316,20 +317,14 @@ def main():
             st.dataframe(df, use_container_width=True)
             st.success(f"✅ {len(results)}件の書籍が見つかりました！")
             
-            # 検索結果の要約
-            price_range = ""
-            if min_price_value is not None or max_price_value is not None:
-                price_parts = []
-                if min_price_value is not None:
-                    price_parts.append(f"{min_price_value}円以上")
-                if max_price_value is not None:
-                    price_parts.append(f"{max_price_value}円以下")
-                price_range = f"、{' かつ '.join(price_parts)}"
+            # 検索結果の要約（セッション状態から取得）
+            current_title = st.session_state.get('current_title', '')
+            current_volume = st.session_state.get('current_volume', '')
             
-            if volume_number.strip():
-                st.info(f"「{title}」の{volume_number}巻に関連する書籍を表示しています（{price_range.lstrip('、') if price_range else '価格制限なし'}、最大5ページまで検索）")
+            if current_volume:
+                st.info(f"「{current_title}」の{current_volume}巻に関連する書籍を表示しています（最大5ページまで検索）")
             else:
-                st.info(f"「{title}」に関連する全ての書籍を表示しています（{price_range.lstrip('、') if price_range else '価格制限なし'}、最大5ページまで検索）")
+                st.info(f"「{current_title}」に関連する全ての書籍を表示しています（最大5ページまで検索）")
             
             # スプレッドシート追加セクション
             st.subheader("📝 スプレッドシートに追加")
@@ -338,74 +333,78 @@ def main():
             if 'selected_book_index' not in st.session_state:
                 st.session_state.selected_book_index = 0
             
-            # レコード選択
-            book_options = [f"{i+1}. {result['タイトル']}" for i, result in enumerate(results)]
-            
             # 選択可能な範囲をチェック
             if st.session_state.selected_book_index >= len(results):
                 st.session_state.selected_book_index = 0
             
+            # レコード選択（フォーム外で実行）
+            book_options = [f"{i+1}. {result['タイトル']}" for i, result in enumerate(results)]
             selected_book_index = st.selectbox(
                 "追加する書籍を選択してください",
                 options=range(len(results)),
                 format_func=lambda x: book_options[x],
                 index=st.session_state.selected_book_index,
                 help="スプレッドシートに追加したい書籍を選択してください",
-                key=f"book_selector_{len(results)}_{hash(str(results))}"  # ユニークなキーを生成
+                key="book_selector"
             )
             
-            # 選択が変更されたらセッション状態を更新（ページリロードを回避）
+            # 選択が変更されたらセッション状態を更新
             st.session_state.selected_book_index = selected_book_index
             
             # 選択された書籍の情報を表示
             selected_book = results[selected_book_index]
             st.info(f"選択された書籍: {selected_book['タイトル']}")
             
-            # スプレッドシート追加フォーム
-            with st.form("add_to_sheet_form"):
-                st.subheader("📋 追加する情報")
-                
-                # 3つの項目を入力（選択された書籍に基づいて初期値を設定）
-                sheet_title = st.text_input(
-                    "タイトル *（必須）",
-                    value=selected_book['タイトル'],
-                    help="スプレッドシートに記録するタイトル（必須）"
-                )
-                
-                sheet_search_title = st.text_input(
-                    "検索用タイトル *（必須）",
-                    value=st.session_state.get('current_title', title.strip()),
-                    help="検索に使用したタイトル（必須）"
-                )
-                
-                sheet_volume = st.text_input(
-                    "巻数 *（必須）",
-                    value=st.session_state.get('current_volume', volume_number.strip() if volume_number.strip() else ""),
-                    help="巻数（必須）"
-                )
-                
-                add_button = st.form_submit_button("📝 スプレッドシートに追加")
-                
-                if add_button:
-                    # すべての項目が入力されているかチェック
-                    if not sheet_title.strip():
-                        st.error("❌ タイトルを入力してください")
-                    elif not sheet_search_title.strip():
-                        st.error("❌ 検索用タイトルを入力してください")
-                    elif not sheet_volume.strip():
-                        st.error("❌ 巻数を入力してください")
+            # 入力フィールド（フォーム外）
+            st.subheader("📋 追加する情報")
+            
+            sheet_title = st.text_input(
+                "タイトル *（必須）",
+                value=selected_book['タイトル'],
+                help="スプレッドシートに記録するタイトル（必須）",
+                key="sheet_title_input"
+            )
+            
+            sheet_search_title = st.text_input(
+                "検索用タイトル *（必須）",
+                value=st.session_state.get('current_title', ''),
+                help="検索に使用したタイトル（必須）",
+                key="sheet_search_title_input"
+            )
+            
+            sheet_volume = st.text_input(
+                "巻数 *（必須）",
+                value=st.session_state.get('current_volume', ''),
+                help="巻数（必須）",
+                key="sheet_volume_input"
+            )
+            
+            # 追加ボタン
+            if st.button("📝 スプレッドシートに追加", key="add_to_sheet_button"):
+                # すべての項目が入力されているかチェック
+                if not sheet_title.strip():
+                    st.error("❌ タイトルを入力してください")
+                elif not sheet_search_title.strip():
+                    st.error("❌ 検索用タイトルを入力してください")
+                elif not sheet_volume.strip():
+                    st.error("❌ 巻数を入力してください")
+                else:
+                    with st.spinner("スプレッドシートに追加中..."):
+                        success = add_to_spreadsheet(
+                            sheet_title.strip(),
+                            sheet_search_title.strip(),
+                            sheet_volume.strip()
+                        )
+                    
+                    if success:
+                        st.success("✅ スプレッドシートに追加されました！")
+                        # 成功時は入力フィールドをクリア
+                        st.session_state.sheet_title_input = ""
+                        st.session_state.sheet_search_title_input = ""
+                        st.session_state.sheet_volume_input = ""
+                        st.rerun()
                     else:
-                        with st.spinner("スプレッドシートに追加中..."):
-                            success = add_to_spreadsheet(
-                                sheet_title.strip(),
-                                sheet_search_title.strip(),
-                                sheet_volume.strip()
-                            )
-                        
-                        if success:
-                            st.success("✅ スプレッドシートに追加されました！")
-                        else:
-                            st.error("❌ スプレッドシートへの追加に失敗しました")
+                        st.error("❌ スプレッドシートへの追加に失敗しました")
         else:
             st.warning("⚠️ 検索条件に一致する書籍は見つかりませんでした")
             
