@@ -30,6 +30,39 @@ def get_gspread_client():
         st.error(f"Google Sheets認証でエラーが発生しました: {e}")
         return None
 
+# スプレッドシートから既存データを取得する機能
+def get_existing_records():
+    try:
+        gc = get_gspread_client()
+        if gc is None:
+            return []
+            
+        # スプレッドシート名をsecretsから取得
+        spreadsheet_name = st.secrets["env"]["sheet_name"]
+        spreadsheet = gc.open(spreadsheet_name)
+        worksheet = spreadsheet.sheet1  # 最初のシートを使用
+        
+        # 全てのレコードを取得
+        records = worksheet.get_all_records()
+        return records
+        
+    except Exception as e:
+        st.error(f"スプレッドシート読み込みエラー: {e}")
+        return []
+
+# 重複チェック機能
+def check_duplicate_title(title, existing_records):
+    """
+    既存レコードに同じタイトルがあるかチェック
+    """
+    title_lower = title.lower().strip()
+    
+    for record in existing_records:
+        existing_title = str(record.get('タイトル', '')).lower().strip()
+        if title_lower == existing_title:
+            return True
+    return False
+
 # スプレッドシートへの書き込み機能
 def add_to_spreadsheet(title, search_title, volume):
     try:
@@ -401,20 +434,28 @@ def main():
                 elif not sheet_volume.strip():
                     st.error("❌ 巻数を入力してください")
                 else:
-                    with st.spinner("スプレッドシートに追加中..."):
-                        success = add_to_spreadsheet(
-                            sheet_title.strip(),
-                            sheet_search_title.strip(),
-                            sheet_volume.strip()
-                        )
+                    # 既存レコードをチェック
+                    with st.spinner("既存データを確認中..."):
+                        existing_records = get_existing_records()
                     
-                    if success:
-                        # 成功時はフィールドクリアフラグと成功メッセージフラグを設定
-                        st.session_state.clear_input_fields = True
-                        st.session_state.show_success_message = True
-                        st.rerun()
+                    # 重複チェック
+                    if check_duplicate_title(sheet_title.strip(), existing_records):
+                        st.warning(f"⚠️ 「{sheet_title.strip()}」は既にスプレッドシートに存在します。追加をスキップしました。")
                     else:
-                        st.error("❌ スプレッドシートへの追加に失敗しました")
+                        with st.spinner("スプレッドシートに追加中..."):
+                            success = add_to_spreadsheet(
+                                sheet_title.strip(),
+                                sheet_search_title.strip(),
+                                sheet_volume.strip()
+                            )
+                        
+                        if success:
+                            # 成功時はフィールドクリアフラグと成功メッセージフラグを設定
+                            st.session_state.clear_input_fields = True
+                            st.session_state.show_success_message = True
+                            st.rerun()
+                        else:
+                            st.error("❌ スプレッドシートへの追加に失敗しました")
         else:
             st.warning("⚠️ 検索条件に一致する書籍は見つかりませんでした")
             
