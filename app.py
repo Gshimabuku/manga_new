@@ -6,14 +6,13 @@ import time
 # --- 楽天 Books API 設定 ---
 API_ENDPOINT = "https://app.rakuten.co.jp/services/api/BooksBook/Search/20170404"
 
-# APIキー設定（app.pyと同じ方法）
+# APIキー設定
 def get_api_keys():
-    """APIキーを複数の方法で取得を試みる"""
     import os
     api_key = None
     affiliate_id = None
     
-    # 方法1: Streamlit secrets
+    # Streamlit secrets から取得
     try:
         api_key = st.secrets["rakuten"]["applicationId"]
         affiliate_id = st.secrets["rakuten"]["affiliateId"]
@@ -24,29 +23,6 @@ def get_api_keys():
     except Exception as e:
         st.warning(f"⚠️ Streamlit secrets読み込みエラー: {e}")
     
-    # 方法2: 環境変数
-    try:
-        api_key = os.getenv("RAKUTEN_APPLICATION_ID")
-        affiliate_id = os.getenv("RAKUTEN_AFFILIATE_ID")
-        if api_key and affiliate_id:
-            st.success("✅ 環境変数から設定を読み込みました")
-            return api_key, affiliate_id
-        else:
-            st.warning("⚠️ 環境変数に楽天設定が見つかりません")
-    except Exception as e:
-        st.warning(f"⚠️ 環境変数読み込みエラー: {e}")
-    
-    # 方法3: デフォルト値（開発用）
-    if not api_key or not affiliate_id:
-        st.error("❌ 楽天APIキーが見つかりません。以下のいずれかの方法で設定してください：")
-        st.markdown("""
-        **設定方法:**
-        1. `.streamlit/secrets.toml` に設定を追加
-        2. 環境変数 `RAKUTEN_APPLICATION_ID` と `RAKUTEN_AFFILIATE_ID` を設定
-        3. Streamlit Cloud の場合、アプリ設定でSecretsを追加
-        """)
-        st.stop()
-    
     return api_key, affiliate_id
 
 # 設定取得
@@ -56,93 +32,121 @@ except Exception as e:
     st.error(f"設定エラー: {e}")
     st.stop()
 
-def search_books_with_volume(title, volume_number, retries=3):
+def title_matches(book_title, search_title):
+    """
+    タイトルが検索条件にマッチするかを判定する関数
+    スペース区切りの単語がすべて含まれているかチェック
+    """
+    # 大文字小文字を統一して比較
+    book_title_lower = book_title.lower()
+    search_title_lower = search_title.lower()
+    
+    # 検索タイトルをスペースで分割
+    search_words = search_title_lower.split()
+    
+    # すべての単語が本のタイトルに含まれているかチェック
+    for word in search_words:
+        if word not in book_title_lower:
+            return False
+    
+    return True
+
+def search_books_with_volume(title, volume_number, retries=3, max_pages=5):
     """
     タイトルで検索し、指定した巻数が含まれる書籍を抽出する
+    最大5ページまで検索結果を取得
     """
-    results = []
-    params = {
-        'applicationId': API_KEY,
-        'affiliateId': AFFILIATE_ID,
-        'title': title,
-        'sort': '-releaseDate',
-        'hits': 30
-    }
+    all_results = []
     
-    for attempt in range(retries):
-        try:
-            response = requests.get(API_ENDPOINT, params=params, timeout=10)
-            if response.status_code == 200:
-                break
-            else:
-                st.error(f"エラー: {response.status_code} (試行 {attempt+1}/{retries})")
-        except requests.exceptions.RequestException as e:
-            st.error(f"通信エラー: {e} (試行 {attempt+1}/{retries})")
+    # APIのタイトルパラメータ用（スペースをプラスに変換）
+    api_title = title.replace(' ', '+')
+    
+    # 各ページを順次取得
+    for page in range(1, max_pages + 1):
+        params = {
+            'applicationId': API_KEY,
+            'affiliateId': AFFILIATE_ID,
+            'title': api_title,
+            'sort': '-releaseDate',
+            'hits': 30,
+            'page': page
+        }
         
-        # エラー時は少し待って再試行
-        if attempt < retries - 1:
-            time.sleep(1)
-    else:
-        st.error("APIが応答しませんでした。後でもう一度お試しください。")
-        return results
-
-    try:
-        data = response.json()
-        books = data.get("Items", [])
+        page_results = []
         
-        if not books:
-            st.warning("該当する本が見つかりませんでした。")
-            return results
-
-        # 巻数でフィルタリング
-        if volume_number:
-            # 複数の巻数表現に対応
-            volume_patterns = [
-                volume_number + "巻",
-                volume_number + "話",
-                f"第{volume_number}巻",
-                f"({volume_number})",
-                f" {volume_number} ",
-                f"vol.{volume_number}",
-                f"Vol.{volume_number}",
-                f"VOL.{volume_number}"
-            ]
+        for attempt in range(retries):
+            try:
+                response = requests.get(API_ENDPOINT, params=params, timeout=10)
+                if response.status_code == 200:
+                    break
+                else:
+                    st.error(f"ページ{page} エラー: {response.status_code} (試行 {attempt+1}/{retries})")
+            except requests.exceptions.RequestException as e:
+                st.error(f"ページ{page} 通信エラー: {e} (試行 {attempt+1}/{retries})")
             
+            # エラー時は少し待って再試行
+            if attempt < retries - 1:
+                time.sleep(1)
+        else:
+            st.warning(f"ページ{page}のAPIが応答しませんでした。")
+            continue
+
+        try:
+            data = response.json()
+            books = data.get("Items", [])
+            
+            # このページに結果がない場合は終了
+            if not books:
+                st.info(f"ページ{page}で検索結果が終了しました。")
+                break
+            
+            # タイトルマッチングとフィルタリング
             for book_item in books:
                 book = book_item["Item"]
                 book_title = book["title"]
                 
-                # いずれかのパターンにマッチする場合に結果に追加
-                for pattern in volume_patterns:
-                    if pattern in book_title:
-                        results.append({
-                            "タイトル": book_title,
-                            "ISBN": book["isbn"],
-                            "出版日": book["salesDate"],
-                            "価格": f"{book.get('itemPrice', '不明')}円",
-                            "出版社": book.get("publisherName", "不明")
-                        })
-                        break  # 一つでもマッチしたら次の本へ
-        else:
-            # 巻数指定なしの場合は全件表示
-            for book_item in books:
-                book = book_item["Item"]
-                results.append({
-                    "タイトル": book["title"],
+                # まず、タイトルでフィルタリング
+                if not title_matches(book_title, title):
+                    continue
+                
+                # 巻数でフィルタリング
+                if volume_number and volume_number not in book_title:
+                    continue
+                
+                # 条件を満たす書籍を結果に追加
+                book_data = {
+                    "タイトル": book_title,
                     "ISBN": book["isbn"],
                     "出版日": book["salesDate"],
                     "価格": f"{book.get('itemPrice', '不明')}円",
                     "出版社": book.get("publisherName", "不明")
-                })
-        
-        return results
-        
-    except Exception as e:
-        st.error(f"データ処理エラー: {e}")
-        return results
+                }
+                
+                # 重複チェック（ISBNで判定）
+                if not any(result["ISBN"] == book_data["ISBN"] for result in all_results):
+                    page_results.append(book_data)
+            
+            all_results.extend(page_results)
+            
+            # このページで取得した件数を表示
+            if page_results:
+                st.info(f"ページ{page}: {len(page_results)}件の書籍を取得")
+            
+            # API制限を考慮して少し待機
+            if page < max_pages:
+                time.sleep(0.5)
+                
+        except Exception as e:
+            st.error(f"ページ{page} データ処理エラー: {e}")
+            continue
+    
+    if not all_results:
+        st.warning("該当する本が見つかりませんでした。")
+    
+    return all_results
 
 def main():
-    st.title("📚 楽天Books 書籍検索")
+    st.title("📚 新規書籍検索")
     st.markdown("タイトルと巻数を指定して楽天Booksから書籍を検索します")
 
     # 入力フォーム
@@ -178,7 +182,7 @@ def main():
             st.write("**巻数:** 指定なし（全巻表示）")
         
         # 検索実行
-        with st.spinner("検索中..."):
+        with st.spinner("検索中... (最大5ページまで検索します)"):
             results = search_books_with_volume(title.strip(), volume_number.strip())
         
         # 結果表示
@@ -191,18 +195,19 @@ def main():
             
             # 検索結果の要約
             if volume_number.strip():
-                st.info(f"「{title}」の{volume_number}巻に関連する書籍を表示しています")
+                st.info(f"「{title}」の{volume_number}巻に関連する書籍を表示しています（最大5ページまで検索）")
             else:
-                st.info(f"「{title}」に関連する全ての書籍を表示しています")
+                st.info(f"「{title}」に関連する全ての書籍を表示しています（最大5ページまで検索）")
         else:
             st.warning("⚠️ 検索条件に一致する書籍は見つかりませんでした")
             
             # 検索のヒント
             st.markdown("""
             **検索のコツ:**
-            - タイトルは完全一致でなくても部分一致で検索されます
+            - タイトルは部分一致で検索され、スペース区切りの単語すべてが含まれる書籍を抽出します
             - 巻数は「108」のように数字のみ入力してください
             - 巻数を指定しない場合、そのタイトルの全ての書籍が表示されます
+            - 例：「ONE PIECE」と入力すると、「ONE」と「PIECE」両方を含む書籍のみが表示されます
             """)
 
     # デバッグ情報
