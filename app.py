@@ -2,9 +2,54 @@ import streamlit as st
 import requests
 import pandas as pd
 import time
+import gspread
+from google.oauth2.service_account import Credentials
+try:
+    from gspread.exceptions import SpreadsheetNotFound, APIError
+except Exception:
+    from gspread import SpreadsheetNotFound, APIError
 
 # --- 楽天 Books API 設定 ---
 API_ENDPOINT = "https://app.rakuten.co.jp/services/api/BooksBook/Search/20170404"
+
+# Google Sheets認証
+def get_gspread_client():
+    try:
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive.readonly"
+            ]
+        )
+        return gspread.authorize(creds)
+    except KeyError as e:
+        st.error(f"設定エラー: Google Cloud認証情報が見つかりません。\nエラー詳細: {e}")
+        return None
+    except Exception as e:
+        st.error(f"Google Sheets認証でエラーが発生しました: {e}")
+        return None
+
+# スプレッドシートへの書き込み機能
+def add_to_spreadsheet(title, search_title, volume):
+    try:
+        gc = get_gspread_client()
+        if gc is None:
+            return False
+            
+        # スプレッドシート名をsecretsから取得
+        spreadsheet_name = st.secrets["env"]["sheet_name"]
+        spreadsheet = gc.open(spreadsheet_name)
+        worksheet = spreadsheet.sheet1  # 最初のシートを使用
+        
+        # 新しい行を追加
+        new_row = [title, search_title, volume]
+        worksheet.append_row(new_row)
+        
+        return True
+    except Exception as e:
+        st.error(f"スプレッドシート書き込みエラー: {e}")
+        return False
 
 # APIキー設定
 def get_api_keys():
@@ -205,7 +250,7 @@ def main():
             max_price = st.selectbox(
                 "最高価格",
                 options=max_price_options,
-                index=6,  # デフォルトで1000円を選択（500から2000までなので6番目）
+                index=6,  # デフォルトで1000円を選択（500から1000までなので6番目）
                 help="検索する書籍の最高価格を選択してください"
             )
         
@@ -275,6 +320,68 @@ def main():
                 st.info(f"「{title}」の{volume_number}巻に関連する書籍を表示しています（{price_range.lstrip('、') if price_range else '価格制限なし'}、最大5ページまで検索）")
             else:
                 st.info(f"「{title}」に関連する全ての書籍を表示しています（{price_range.lstrip('、') if price_range else '価格制限なし'}、最大5ページまで検索）")
+            
+            # スプレッドシート追加セクション
+            st.subheader("📝 スプレッドシートに追加")
+            
+            # レコード選択
+            book_options = [f"{i+1}. {result['タイトル']}" for i, result in enumerate(results)]
+            selected_book_index = st.selectbox(
+                "追加する書籍を選択してください",
+                options=range(len(results)),
+                format_func=lambda x: book_options[x],
+                help="スプレッドシートに追加したい書籍を選択してください"
+            )
+            
+            # 選択された書籍の情報を表示
+            selected_book = results[selected_book_index]
+            st.info(f"選択された書籍: {selected_book['タイトル']}")
+            
+            # スプレッドシート追加フォーム
+            with st.form("add_to_sheet_form"):
+                st.subheader("📋 追加する情報")
+                
+                # 3つの項目を入力
+                sheet_title = st.text_input(
+                    "タイトル *（必須）",
+                    value=selected_book['タイトル'],
+                    help="スプレッドシートに記録するタイトル（必須）"
+                )
+                
+                sheet_search_title = st.text_input(
+                    "検索用タイトル *（必須）",
+                    value=title.strip(),
+                    help="検索に使用したタイトル（必須）"
+                )
+                
+                sheet_volume = st.text_input(
+                    "巻数 *（必須）",
+                    value=volume_number.strip() if volume_number.strip() else "",
+                    help="巻数（必須）"
+                )
+                
+                add_button = st.form_submit_button("📝 スプレッドシートに追加")
+                
+                if add_button:
+                    # すべての項目が入力されているかチェック
+                    if not sheet_title.strip():
+                        st.error("❌ タイトルを入力してください")
+                    elif not sheet_search_title.strip():
+                        st.error("❌ 検索用タイトルを入力してください")
+                    elif not sheet_volume.strip():
+                        st.error("❌ 巻数を入力してください")
+                    else:
+                        with st.spinner("スプレッドシートに追加中..."):
+                            success = add_to_spreadsheet(
+                                sheet_title.strip(),
+                                sheet_search_title.strip(),
+                                sheet_volume.strip()
+                            )
+                        
+                        if success:
+                            st.success("✅ スプレッドシートに追加されました！")
+                        else:
+                            st.error("❌ スプレッドシートへの追加に失敗しました")
         else:
             st.warning("⚠️ 検索条件に一致する書籍は見つかりませんでした")
             
@@ -295,6 +402,13 @@ def main():
         st.write(f"- 楽天API Key: {'✅ 設定済み' if API_KEY else '❌ 未設定'}")
         st.write(f"- 楽天Affiliate ID: {'✅ 設定済み' if AFFILIATE_ID else '❌ 未設定'}")
         st.write(f"- API Endpoint: {API_ENDPOINT}")
+        st.write("**Google Sheets設定:**")
+        try:
+            sheet_name = st.secrets["env"]["sheet_name"]
+            st.write(f"- スプレッドシート名: {sheet_name}")
+            st.write(f"- Google Cloud認証: {'✅ 設定済み' if 'gcp_service_account' in st.secrets else '❌ 未設定'}")
+        except KeyError:
+            st.write("- Google Sheets設定: ❌ 未設定")
         st.write("**価格フィルタリング:**")
         st.write("- フィルタリング方法: APIパラメータ + クライアント側二重チェック")
         st.write("- 目的: ユーザー指定価格帯での検索")
